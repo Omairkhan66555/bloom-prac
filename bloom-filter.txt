@@ -1,0 +1,138 @@
+
+import hashlib
+import math
+
+
+class BloomFilter:
+    def __init__(self, capacity=100, false_positive_rate=0.01):
+        if capacity <= 0:
+            raise ValueError("Capacity must be positive.")
+
+        if not 0 < false_positive_rate < 1:
+            raise ValueError("False positive rate must be between 0 and 1.")
+
+        self.capacity = capacity
+        self.false_positive_rate = false_positive_rate
+
+        self.size = max(
+            1,
+            math.ceil(
+                -capacity * math.log(false_positive_rate)
+                / (math.log(2) ** 2)
+            )
+        )
+
+        self.hash_count = max(
+            1,
+            round((self.size / capacity) * math.log(2))
+        )
+
+        self.bit_array = bytearray((self.size + 7) // 8)
+        self.items_added = 0
+
+    def _hash_positions(self, item):
+        data = str(item).encode("utf-8")
+
+        digest1 = hashlib.sha256(b"1:" + data).digest()
+        digest2 = hashlib.sha256(b"2:" + data).digest()
+
+        h1 = int.from_bytes(digest1[:8], "big")
+        h2 = int.from_bytes(digest2[:8], "big") | 1
+
+        for i in range(self.hash_count):
+            yield (h1 + i * h2) % self.size
+
+    def add(self, item):
+        for position in self._hash_positions(item):
+            byte_index = position // 8
+            bit_index = position % 8
+            self.bit_array[byte_index] |= 1 << bit_index
+
+        self.items_added += 1
+
+    def might_contain(self, item):
+        for position in self._hash_positions(item):
+            byte_index = position // 8
+            bit_index = position % 8
+
+            if not (self.bit_array[byte_index] & (1 << bit_index)):
+                return False
+
+        return True
+
+    def estimated_false_positive_rate(self):
+        return (
+            1 - math.exp(
+                -self.hash_count * self.items_added / self.size
+            )
+        ) ** self.hash_count
+
+
+def main():
+    print("=" * 48)
+    print("       BLOOM FILTER - MEMBERSHIP TEST")
+    print("=" * 48)
+
+    n = int(input("Enter number of dataset items: "))
+
+    if n <= 0:
+        print("Number of items must be positive.")
+        return
+
+    dataset = []
+
+    for i in range(n):
+        item = input(f"Enter dataset item {i + 1}: ").strip()
+
+        if not item:
+            print("Dataset items cannot be empty.")
+            return
+
+        dataset.append(item)
+
+    bloom = BloomFilter(
+        capacity=n,
+        false_positive_rate=0.01
+    )
+
+    for item in dataset:
+        bloom.add(item)
+
+    print("\nDataset loaded into Bloom Filter.")
+    print(f"Bit-array size: {bloom.size} bits")
+    print(f"Number of hash functions: {bloom.hash_count}")
+    print(
+        "Estimated false-positive rate: "
+        f"{bloom.estimated_false_positive_rate():.4%}"
+    )
+
+    print("\nEnter items to test. Type 'exit' to stop.")
+
+    while True:
+        query = input("\nEnter item to search: ").strip()
+
+        if query.lower() == "exit":
+            break
+
+        if not query:
+            print("Please enter a non-empty item.")
+            continue
+
+        if bloom.might_contain(query):
+            print(f"'{query}' MAY be present in the dataset.")
+
+            if query in dataset:
+                print("Exact verification: Item is present.")
+            else:
+                print("Exact verification: FALSE POSITIVE!")
+        else:
+            print(
+                f"'{query}' is DEFINITELY NOT present "
+                "in the dataset."
+            )
+
+    print("\nCompleted successfully.")
+
+
+if __name__ == "__main__":
+    main()
